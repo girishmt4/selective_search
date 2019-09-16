@@ -1,0 +1,68 @@
+#FALCONN directory
+FALCONN
+
+#20NewsGroup Documents
+20News100
+20News10000
+
+#Backup Folder
+backup_folder
+<<<<<<< HEAD
+All The Backups Until Oct 8
+
+#Dummy Dataset
+dummy
+=======
+>>>>>>> 6979d6c330d3dabb5b9823ecf73ace4caa19102e
+
+#Porter Stemmer Header Files
+porter2_stemmer.cpp
+porter2_stemmer.h
+
+# Prerequisites
+*.d
+
+core
+
+# Compiled Object files
+*.slo
+*.lo
+*.o
+*.obj
+
+# Precompiled Headers
+*.gch
+*.pch
+
+# Compiled Dynamic libraries
+*.so
+*.dylib
+*.dll
+
+# Fortran module files
+*.mod
+*.smod
+
+# Compiled Static libraries
+*.lai
+*.la
+*.a
+*.lib
+
+# Executables
+*.exe
+*.out
+*.app
+
+# Documentations and Reports
+*.pdf
+
+.fuse_hidden*
+.vscode/
+
+# Confidential Files
+LSH_With_Sparse_(copy before deleted commented code).cpp
+LSH_With_Sparse (copy before clustering algorithm).cpp
+LSH_Sparse
+TFIDF_Vectorizer
+commands.txt
