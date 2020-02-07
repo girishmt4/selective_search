@@ -19,19 +19,50 @@
 #include <ctime>
 #include <unordered_set>
 #include <typeinfo>
+#include <math.h>
 
 #include "FALCONN/falconn/src/include/falconn/falconn_global.h"
 
 
 using namespace std;
+using std::cerr;
+using std::cout;
+using std::endl;
+using std::exception;
+using std::make_pair;
+using std::max;
+using std::mt19937_64;
+using std::pair;
+using std::runtime_error;
+using std::string;
+using std::uniform_int_distribution;
+using std::unique_ptr;
+using std::vector;
+
+using std::chrono::duration;
+using std::chrono::duration_cast;
+using std::chrono::high_resolution_clock;
+
+using falconn::construct_table;
+using falconn::compute_number_of_hash_functions;
+using falconn::DenseVector;
+using falconn::DistanceFunction;
+using falconn::LSHConstructionParameters;
+using falconn::LSHFamily;
+using falconn::LSHNearestNeighborTable;
+using falconn::LSHNearestNeighborQuery;
+using falconn::QueryStatistics;
+using falconn::StorageHashTable;
+using falconn::get_default_parameters;
+
 
 typedef falconn::SparseVector<float> Point;
 
 // const int NUM_QUERIES = 50;
 // const int NUM_HASH_TABLES = 10;
-const int NUM_HASH_BITS = 18;
+// const int NUM_HASH_BITS = 18;
 const int NUM_ROTATIONS = 2;
-const int FEAT_HASH_DIMENSION = 512;
+const int FEAT_HASH_DIMENSION = 2048;
 const int NUM_SETUP_THREADS = 0;
 const int MAX_NEIGHBORS_TO_CHECK = 50;
 const float MAX_OVERLAP_TO_CHECK = 0.7;
@@ -44,6 +75,7 @@ void read_dataset(std::string file_name, std::vector<Point> *dataset, int* vocab
   std::string line;
   std::getline(infile, line);
   *vocabDimension=stoi(line);
+
   int index,counter=0;
   int non_empty_counter=0;
   float value;
@@ -59,7 +91,6 @@ void read_dataset(std::string file_name, std::vector<Point> *dataset, int* vocab
   //reading one point at a time
   while (std::getline(infile, line))
   {
-
     p.clear();
     if(!line.empty())
     {
@@ -68,13 +99,18 @@ void read_dataset(std::string file_name, std::vector<Point> *dataset, int* vocab
       for (pairs_iter = pairs.begin();pairs_iter != pairs.end(); ++pairs_iter)
       {
         //tokenizing index and tfidf value from each other
-        tokenizer tokens(*pairs_iter,sep_dash);
-        tok_iter = tokens.begin();
-        index = stoi(*tok_iter);
-        tok_iter++;
-        value = stof(*tok_iter);
-        //appending the index & tfidf_value to the data point
-        p.push_back(std::make_pair(index,value));
+        if(*pairs_iter != "")
+        {
+          tokenizer tokens(*pairs_iter,sep_dash);
+          tok_iter = tokens.begin();
+          index = stoi(*tok_iter);
+
+          tok_iter++;
+          value = stof(*tok_iter);
+          //appending the index & tfidf_value to the data point
+          p.push_back(std::make_pair(index,value));
+        }
+
       }
       non_empty_mapping->insert({non_empty_counter,counter});
       non_empty_counter++;
@@ -372,7 +408,6 @@ int main(int argc, char** argv)
   int neighbors_range = stoi(argv[5]);
   float overlap_range = stof(argv[6]);
   const int NUM_HASH_TABLES = stoi(argv[7]);
-
   int vocabdimension=0,replication_total=0,c_id=0;
   int randomIndex,test_query_counter,flag,absorbant_cluster,overlap,iter,int_index,index_count;
   size_t counter=0;
@@ -426,6 +461,10 @@ int main(int argc, char** argv)
     std::cout << "\n" << dataset.size() << " points read in " << elapsed_time << " s" << '\n';
     std::cout << "Non empty = " << non_empty_mapping.size() << '\n';
     std::cout << "Empty = " << empty_documents.size() << '\n';
+    for(auto const& i: empty_documents)
+    {
+      std::cout << i << '\n';
+    }
     // std::cout << "Total = " << dataset.size() << '\n';
     std::cout << "---------------------------------------------------------------------" << '\n';
 
@@ -522,6 +561,7 @@ int main(int argc, char** argv)
     std::cout << elapsed_time / queries.size() << " s per query" << '\n';
     std::cout << "---------------------------------------------------------------------" << '\n';
 
+    int NUM_HASH_BITS = (log2(dataset_new.size())/1)+1;
 
 
     // setting parameters and constructing the table
@@ -534,7 +574,10 @@ int main(int argc, char** argv)
     params.num_rotations = NUM_ROTATIONS;
     params.num_setup_threads = NUM_SETUP_THREADS;
     params.storage_hash_table = falconn::StorageHashTable::BitPackedFlatHashTable;
-
+    // params = get_default_parameters<Point>(dataset.size(),
+                                   // dataset[0].size(),
+                                   // DistanceFunction::EuclideanSquared,
+                                   // true);
     std::cout << "\nBuilding the LSH table...." << '\n';
     t1 = std::chrono::high_resolution_clock::now();
     auto table = falconn::construct_table<Point>(dataset_new, params);
@@ -689,11 +732,11 @@ int main(int argc, char** argv)
 
         if(iter == 1)
         {
-          neighbors_with_similarity=query_object->find_k_nearest_neighbors(sampling_space[randomIndex],neighbors_range,&neighbors);
+          neighbors_with_similarity=query_object->find_k_nearest_neighbors(dataset_new[int_index],neighbors_range,&neighbors);
         }
         else
         {
-          neighbors_with_similarity=query_object->find_k_nearest_neighbors(sampling_space[randomIndex],neighbors_range,&neighbors);
+          neighbors_with_similarity=query_object->find_k_nearest_neighbors(dataset_new[int_index],neighbors_range,&neighbors);
         }
 
         //calculating the average similarity
@@ -702,6 +745,16 @@ int main(int argc, char** argv)
         for(map<int,float>::iterator neighbors_iterator = neighbors_with_similarity.begin();neighbors_iterator != neighbors_with_similarity.end();neighbors_iterator++)
         {
           std::cout << neighbors_iterator->first << " -> " << neighbors_iterator->second << "\n";
+
+          //erasing the neighbors with distance more than 1 units
+          // if(neighbors_iterator-> second < -0.33 && neighbors_iterator->first != int_index)
+          // {
+          //
+          //   std::cout << neighbors_iterator->first << "..erased\n";
+          //   neighbors_with_similarity.erase(neighbors_iterator->first);
+          //   neighbors.erase(find(neighbors.begin(),neighbors.end(),neighbors_iterator->first));
+          //
+          // }
           // average_similarity = average_similarity + neighbors_iterator->second;
         }
         // average_similarity = average_similarity/neighbors_with_similarity.size();
@@ -738,9 +791,14 @@ int main(int argc, char** argv)
 
         if(max_overlap >= overlap_range)
         {
+
           // std::cout << "merging with cluster " << absorbant_cluster << " & max_overlap = " << max_overlap << '\n';
           for(auto doc : neighbors)
           {
+            if(neighbors_with_similarity[doc] > 2)
+            {
+              continue;
+            }
             if(doc_cluster_similarity.find(doc) != doc_cluster_similarity.end())
             {
               if(neighbors_with_similarity[doc] > doc_cluster_similarity[doc].second)
@@ -782,11 +840,16 @@ int main(int argc, char** argv)
         }
         else
         {
+
           // std::cout << "creating new cluster " << "max_overlap = " << max_overlap << '\n';
           unordered_set<int> this_cluster;
           int new_cluster_flag=0;
           for(auto doc : neighbors)
           {
+            if(neighbors_with_similarity[doc] > 2)
+            {
+              continue;
+            }
             if(doc_cluster_similarity.find(doc) != doc_cluster_similarity.end())
             {
               if(neighbors_with_similarity[doc] > doc_cluster_similarity[doc].second)

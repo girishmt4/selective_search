@@ -1,6 +1,7 @@
 #include <iostream>
 #include <fstream>
 #include <algorithm>
+#include <cctype>
 #include<math.h>
 #include <vector>
 #include <string.h>
@@ -17,6 +18,12 @@ namespace fs = std::experimental::filesystem;
 
 //Global Declaration of Stopwords List
 unordered_set<string> stop_list;
+
+struct non_alpha {
+    bool operator()(char c) {
+        return !std::isalpha(c);
+    }
+};
 
 int vocabularyIndex=0;
 
@@ -38,7 +45,7 @@ bool has_any_digits(const std::string& s)
 
 bool has_any_letter(const std::string& s)
 {
-  return std::any_of(s.begin(),s.end(), ::isalpha);
+  return std::any_of(s.begin(),s.end(), non_alpha());
 }
 
 //Function reads the stopwords from the stopwords file and stores in a unordered_set
@@ -57,21 +64,21 @@ void read_stopwords(string stopfile)
 }
 
 //Calculates the TF Scores document by document
-map<string,float> getTFScores(string file_content_in_string, map<string,float> *DFVector, map<string,int> *Vocabulary)
+map<int,float> getTFScores(string file_content_in_string, map<int,float> *DFVector, map<string,int> *Vocabulary)
 {
   string word;
-  map<string,float> TFScores;
+  map<int,float> TFScores;
   typedef boost::tokenizer<boost::char_separator<char> > tokenizer;
-  boost::char_separator<char> sep(",.<>/?;:'\"{}[] \n\t|`~!@#$%^&*()_=+");
+  boost::char_separator<char> sep(",-\\.<>/?;:'\"{}[] \n\t|`~!@#$%^&*()_=+");
   tokenizer tokens(file_content_in_string, sep);
 
   for (tokenizer::iterator tok_iter = tokens.begin();tok_iter != tokens.end(); ++tok_iter)
   {
     //filtering numeric or alphanumeric terms
-    if(!has_any_digits(*tok_iter))
-    {
+    // if(!has_any_digits(*tok_iter))
+    // {
       //checking if the string contains letter
-      if(has_any_letter(*tok_iter))
+      if(!has_any_letter(*tok_iter))
       {
         //filtering the stopwords
         if(is_in_stopwords(*tok_iter)==false)
@@ -86,35 +93,36 @@ map<string,float> getTFScores(string file_content_in_string, map<string,float> *
 
             //if the term is not in DFVector(Unique terms vector i.e. vocabulary)
             //then make an entry in it and put DF value '0' for now
-            if(DFVector->find(word)==DFVector->end())
+            // if(DFVector->find(Vocabulary[word])==DFVector->end())
+            if(Vocabulary->find(word)==Vocabulary->end())
             {
-              DFVector->insert(make_pair(word,0));
               Vocabulary->insert(make_pair(word,vocabularyIndex));
+              DFVector->insert(make_pair((*Vocabulary)[word],0));
               // std::cout << (*Vocabulary)[word] << '\n';
               vocabularyIndex++;
             }
 
             ////if the term is not in TFVector
             //then make an entry in it and put TF value '1'
-            if(TFScores.find(word)==TFScores.end())
+            if(TFScores.find((*Vocabulary)[word])==TFScores.end())
             {
-              TFScores.insert(make_pair(word,1));
+              TFScores.insert(make_pair((*Vocabulary)[word],1));
             }
             else //if the term is in TFVector then increment its TF value by 1
             {
-              TFScores[word]+=1;
+              TFScores[(*Vocabulary)[word]]+=1;
             }
           }
         }
       }
-    }
+    // }
   }
-  map<std::string,float>::iterator TFVectorIterator=TFScores.begin();
+  map<int,float>::iterator TFVectorIterator=TFScores.begin();
 
   while(TFVectorIterator != TFScores.end())
   {
     //Remove low TF stems
-    if(TFVectorIterator->second <= 1)
+    if(TFVectorIterator->second < 2)
     {
       TFVectorIterator=TFScores.erase(TFVectorIterator);
     }
@@ -127,12 +135,12 @@ map<string,float> getTFScores(string file_content_in_string, map<string,float> *
   return TFScores;
 }
 
-void getTFIDFScores(map<string,float> *DFVector,map<string, map<std::string,float> > *TFIDFMatrix)
+void getTFIDFScores(map<int,float> *DFVector,map<string, map<int,float> > *TFIDFMatrix)
 {
-  map<string, map<std::string,float> >::iterator TFIDFMatrixIterator=TFIDFMatrix->begin();
+  map<string, map<int,float> >::iterator TFIDFMatrixIterator=TFIDFMatrix->begin();
   while(TFIDFMatrixIterator!=TFIDFMatrix->end())
   {
-    map<std::string,float>::iterator TermIterator = TFIDFMatrixIterator->second.begin();
+    map<int,float>::iterator TermIterator = TFIDFMatrixIterator->second.begin();
     while(TermIterator!=TFIDFMatrixIterator->second.end())
     {
       //check if the term is in unique term vector
@@ -177,14 +185,14 @@ int main(int argc, char** argv)
     return -1;
   }
 
-  map<string,float> DFVector;
+  map<int,float> DFVector;
   map<string,int> Vocabulary;
-  map<string, map<std::string,float> > TFIDFMatrix;
+  map<string, map<int,float> > TFIDFMatrix;
   std::string dir=argv[1];
   string stopfile=argv[2];
   string output_file=argv[3];
   std::string file_content;
-  ofstream outfile,cluster_ground_truth_file;
+  ofstream outfile,cluster_ground_truth_file,vocabularyfile;
   clock_t begin,end,prog_start,prog_end;
 
   prog_start=clock();
@@ -226,7 +234,7 @@ int main(int argc, char** argv)
       std::transform(file_content.begin(), file_content.end(), file_content.begin(), ::tolower);
 
       //calculating TF Scores for this document
-      map<string,float> TFVector=getTFScores(file_content,&DFVector,&Vocabulary);
+      map<int,float> TFVector=getTFScores(file_content,&DFVector,&Vocabulary);
 
       //Inserting the pair of file name & TF Vector into TFIDF Matrix
       TFIDFMatrix.insert(make_pair(file_name,TFVector));
@@ -256,8 +264,12 @@ int main(int argc, char** argv)
   std::cout << "Writing to output file...." << '\n';
   begin=clock();
   outfile.open(output_file);
-
-  map<string, map<std::string,float> >::iterator TFIDFMatrixIterator=TFIDFMatrix.begin();
+  vocabularyfile.open("./vocab.txt");
+  for(map<string,int>::iterator vocabIterator = Vocabulary.begin();vocabIterator!=Vocabulary.end();vocabIterator++)
+  {
+    vocabularyfile << vocabIterator->first << " : " << vocabIterator->second << " \n";
+  }
+  map<string, map<int,float> >::iterator TFIDFMatrixIterator=TFIDFMatrix.begin();
 
   // while(TFIDFMatrixIterator!=TFIDFMatrix.end())
   // {
@@ -279,15 +291,17 @@ int main(int argc, char** argv)
   //   outfile << "\n";
   //   TFIDFMatrixIterator++;
   // }
+
   outfile << DFVector.size() << "\n";
   while(TFIDFMatrixIterator!=TFIDFMatrix.end())
   {
-    map<std::string,float>::iterator TermIterator = TFIDFMatrixIterator->second.begin();
+    map<int,float>::iterator TermIterator = TFIDFMatrixIterator->second.begin();
     // map<int,std::string>::iterator vocabularyIterator = DFVector.begin()
     while(TermIterator!=TFIDFMatrixIterator->second.end())
     {
       // outfile << Vocabulary.find(TermIterator->first) << "-" << TFIDFMatrixIterator->second[TermIterator->first] << ",";
-      outfile << Vocabulary[TermIterator->first] << ":" << TFIDFMatrixIterator->second[TermIterator->first] << ",";
+      outfile << TermIterator->first << ":" << TermIterator->second << ",";
+      // TFIDFMatrixIterator->second[TermIterator->first] << ",";
 
       TermIterator++;
     }
